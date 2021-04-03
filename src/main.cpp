@@ -84,11 +84,29 @@ int main(int argc, char **argv)
 
         // Do the following:
         //   - Get current time
+
+        
         //   - *Check if any processes need to move from NotStarted to Ready (based on elapsed time), and if so put that process in the ready queue
+
         //   - *Check if any processes have finished their I/O burst, and if so put that process back in the ready queue
+        for(int i=0; i<processes.size(); i++) {
+            if(processes[i]->getState() == Process::State::Ready) {
+                
+            }
+        }
         //   - *Check if any running process need to be interrupted (RR time slice expires or newly ready process has higher priority)
         //   - *Sort the ready queue (if needed - based on scheduling algorithm)
         //   - Determine if all processes are in the terminated state
+        bool stillRunning = false;
+        for(int i=0; i<processes.size(); i++) {
+            if(processes[i]->getState() != Process::State::Terminated) {
+                stillRunning = true;
+                break;
+            }
+        }
+        if(!stillRunning) {
+            shared_data->all_terminated = true;
+        }
         //   - * = accesses shared data (ready queue), so be sure to use proper synchronization
         shared_data->all_terminated=true;
         for (Process* i : processes){
@@ -173,6 +191,7 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
 
 
     //  - * = accesses shared data (ready queue), so be sure to use proper synchronization
+    }
 }
 
 int printProcessOutput(std::vector<Process*>& processes, std::mutex& mutex)
