@@ -41,7 +41,11 @@ public:
     double getWaitTime() const;
     double getCpuTime() const;
     double getRemainingTime() const;
+    double getBurstTime();
+    bool isBurstFinished(uint64_t current_time);
+    bool isFinalCycle();
 
+    void incrementCurrentBurst();
     void setBurstStartTime(uint64_t current_time);
     void setState(State new_state, uint64_t current_time);
     void setCpuCore(int8_t core_num);

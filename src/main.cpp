@@ -26,6 +26,7 @@ int printProcessOutput(std::vector<Process*>& processes, std::mutex& mutex);
 void clearOutput(int num_lines);
 uint64_t currentTime();
 std::string processStateToString(Process::State state);
+bool needsInterupt(uint64_t time, Process* process, SchedulerData *shared_data);
 
 int main(int argc, char **argv)
 {
@@ -68,6 +69,16 @@ int main(int argc, char **argv)
     // Free configuration data from memory
     deleteConfig(config);
 
+    // Sort Ready Queue (if necessary)
+    if(shared_data->algorithm == PP)
+    {
+        shared_data->ready_queue.sort(PpComparator());
+    }
+    if(shared_data->algorithm == SJF)
+    {
+        shared_data->ready_queue.sort(SjfComparator());
+    }
+
     // Launch 1 scheduling thread per cpu core
     std::thread *schedule_threads = new std::thread[num_cores];
     for (i = 0; i < num_cores; i++)
@@ -82,44 +93,56 @@ int main(int argc, char **argv)
         // Clear output from previous iteration
         clearOutput(num_lines);
 
+        //Mutex Start
+        {std::lock_guard<std::mutex> lock(shared_data->mutex);
         // Do the following:
         //   - Get current time
-
         
-        //   - *Check if any processes need to move from NotStarted to Ready (based on elapsed time), and if so put that process in the ready queue
+        uint64_t time = currentTime();
 
-        //   - *Check if any processes have finished their I/O burst, and if so put that process back in the ready queue
-        for(int i=0; i<processes.size(); i++) {
-            if(processes[i]->getState() == Process::State::Ready) {
-                
-            }
-        }
-        //   - *Check if any running process need to be interrupted (RR time slice expires or newly ready process has higher priority)
-        //   - *Sort the ready queue (if needed - based on scheduling algorithm)
-        //   - Determine if all processes are in the terminated state
-        bool stillRunning = false;
-        for(int i=0; i<processes.size(); i++) {
-            if(processes[i]->getState() != Process::State::Terminated) {
-                stillRunning = true;
-                break;
-            }
-        }
-        if(!stillRunning) {
-            shared_data->all_terminated = true;
-        }
-        //   - * = accesses shared data (ready queue), so be sure to use proper synchronization
-        shared_data->all_terminated=true;
+        bool all_term = true;
         for (Process* i : processes){
-            i->updateProcess(currentTime());
-            if (i->getState() == Process::State::Ready)
-            {
+
+            //   - *Check if any processes need to move from NotStarted to Ready (based on elapsed time), and if so put that process in the ready queue
+            if (time >= i->getStartTime() && i->getState() == i->State::NotStarted){
+                i->setState(i->State::Ready, time);
                 shared_data->ready_queue.push_back(i);
             }
+
+            //   - *Check if any processes have finished their I/O burst, and if so put that process back in the ready queue
+            if (i->isBurstFinished(time) && i->getState() == i->State::IO)
+            {
+                i->setState(i->State::Ready, time);
+                shared_data->ready_queue.push_back(i);
+                i->incrementCurrentBurst();
+            }
+
+            //   - *Check if any running process need to be interrupted (RR time slice expires or newly ready process has higher priority)
+            if (needsInterupt(time, i, shared_data) && i->getState() == i->State::Running)
+            {
+                i->interrupt();
+            }
+
+            //   - Determine if all processes are in the terminated state
             if (i->getState() != Process::State::Terminated)
             {
-                shared_data->all_terminated = false;
+                all_term = false;
             }
         }
+
+        //   - *Sort the ready queue (if needed - based on scheduling algorithm)
+        if(shared_data->algorithm == PP)
+        {
+            shared_data->ready_queue.sort(PpComparator());
+        }
+        if(shared_data->algorithm == SJF)
+        {
+            shared_data->ready_queue.sort(SjfComparator());
+        }
+
+
+        shared_data->all_terminated = all_term;
+        }//Mutex End
 
         // output process status table
         num_lines = printProcessOutput(processes, shared_data->mutex);
@@ -144,8 +167,8 @@ int main(int argc, char **argv)
     //  - Average turnaround time
     //  - Average waiting time
 
-
     // Clean up before quitting program
+    
     processes.clear();
 
     return 0;
@@ -158,41 +181,78 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
 
     // Repeat until all processes in terminated state:
     while(!shared_data->all_terminated) {
+
+        uint64_t time = currentTime();
+
+        {std::lock_guard<std::mutex> lock(shared_data->mutex);//Lock
     //   - *Get process at front of ready queue
         process = shared_data->ready_queue.front();
         shared_data->ready_queue.pop_front();
-        process->setState(Process::Running, currentTime());
+        }//Unlock
+        process->setState(Process::Running, time);
+        process->setBurstStartTime(time);
 
     //   - Simulate the processes running until one of the following:
     //     - CPU burst time has elapsed
     //     - Interrupted (RR time slice has elapsed or process preempted by higher priority process)
-        
-        while(/*CPU Burst cycle is finished*/1 && !process->isInterrupted() ) {
-
+        while(!process->isBurstFinished(time) && !process->isInterrupted())
+        {
+            time = currentTime();
         }
-        //currentTime() - process->getBurstStartTime()
 
     //  - Place the process back in the appropriate queue
-    //     - I/O queue if CPU burst finished (and process not finished) -- no actual queue, simply set state to IO
     //     - Terminated if CPU burst finished and no more bursts remain -- no actual queue, simply set state to Terminated
-    //     - *Ready queue if interrupted (be sure to modify the CPU burst time to now reflect the remaining time)
-        if(/*Last cycle is finished*/1) {
-            process->setState(Process::Terminated, currentTime());
-        } else if(process->isInterrupted()) {
-            
-            shared_data->ready_queue.push_back(process);
-        } else {
-            process->setState(Process::IO, currentTime());
-        }
+        if(process->isFinalCycle() && process->isBurstFinished(time)) {
+            process->setState(Process::Terminated, time);
 
+    //     - *Ready queue if interrupted (be sure to modify the CPU burst time to now reflect the remaining time)
+        } else if(process->isInterrupted()) {
+            {std::lock_guard<std::mutex> lock(shared_data->mutex);//Lock
+            shared_data->ready_queue.push_back(process);
+            }//Unlock
+            process->updateProcess(time);
+            process->interruptHandled();
+
+    //     - I/O queue if CPU burst finished (and process not finished) -- no actual queue, simply set state to IO
+        } else {
+            process->setState(Process::IO, time);
+            process->incrementCurrentBurst();
+        }
 
 
     //  - Wait context switching time
+    usleep(shared_data->context_switch);
 
 
     //  - * = accesses shared data (ready queue), so be sure to use proper synchronization
     }
 }
+
+
+bool needsInterupt(uint64_t time, Process* process, SchedulerData *shared_data)
+{
+    if(shared_data->algorithm == RR)
+    {
+        if(time - process->getBurstStartTime() >= shared_data->time_slice)
+        {
+            return true;
+        }
+    }
+
+    if(shared_data->algorithm == PP)
+    {
+        for(Process* i : shared_data->ready_queue)
+        {
+            if(i->getPriority() < process->getPriority())
+            {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 
 int printProcessOutput(std::vector<Process*>& processes, std::mutex& mutex)
 {
