@@ -124,6 +124,10 @@ void Process::updateProcess(uint64_t current_time)
 {
     // use `current_time` to update turnaround time, wait time, burst times, 
     // cpu time, and remaining time
+
+    if ((current_time = getStartTime() || current_time > getStartTime()) && getState() == State::NotStarted){
+        setState(State::Ready,current_time);
+    }
 }
 
 void Process::updateBurstTime(int burst_idx, uint32_t new_time)
@@ -139,12 +143,12 @@ void Process::updateBurstTime(int burst_idx, uint32_t new_time)
 bool SjfComparator::operator ()(const Process *p1, const Process *p2)
 {
     // your code here!
-    return false; // change this!
+    return (p1->getRemainingTime() < p2->getRemainingTime());
 }
 
 // PP - comparator for sorting read queue based on priority
 bool PpComparator::operator ()(const Process *p1, const Process *p2)
 {
     // your code here!
-    return false; // change this!
+    return (p1->getPriority() < p2->getPriority());
 }
