@@ -101,7 +101,7 @@ int main(int argc, char **argv)
         uint64_t time = currentTime();
 
         for (Process* i : processes){
-            i->updateProcess(time-start);
+            i->updateProcess(time);
             //   - *Check if any processes need to move from NotStarted to Ready (based on elapsed time), and if so put that process in the ready queue
             if (time >= i->getStartTime() && i->getState() == i->State::NotStarted){
                 i->setState(i->State::Ready, time);
@@ -196,6 +196,7 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
             shared_data->ready_queue.pop_front();
             }//Unlock
             process->setState(Process::Running, time);
+            process->setCpuCore(core_id);
             process->setBurstStartTime(time);
 
     //   - Simulate the processes running until one of the following:
@@ -210,6 +211,7 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
     //  - Place the process back in the appropriate queue
     //     - Terminated if CPU burst finished and no more bursts remain -- no actual queue, simply set state to Terminated
             if(process->isFinalCycle() && process->isBurstFinished(time)) {
+                process->setCpuCore(-1);
                 process->setState(Process::Terminated, time);
 
     //     - *Ready queue if interrupted (be sure to modify the CPU burst time to now reflect the remaining time)
@@ -217,11 +219,12 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
                 {std::lock_guard<std::mutex> lock(shared_data->mutex);//Lock
                 shared_data->ready_queue.push_back(process);
                 }//Unlock
-        
+                process->setCpuCore(-1);
                 process->interruptHandled();
 
     //     - I/O queue if CPU burst finished (and process not finished) -- no actual queue, simply set state to IO
             } else {
+                process->setCpuCore(-1);
                 process->setState(Process::IO, time);
                 process->incrementCurrentBurst();
             }

@@ -122,6 +122,15 @@ void Process::interruptHandled()
 
 void Process::updateProcess(uint64_t current_time)
 {
+    
+    if (state != State::Terminated)
+    {
+        turn_time = current_time - launch_time;
+    }
+    else {
+        remain_time = 0;
+    }
+    
     // use `current_time` to update turnaround time, wait time, burst times, 
     // cpu time, and remaining time
     if(is_interrupted)
@@ -129,16 +138,28 @@ void Process::updateProcess(uint64_t current_time)
         uint64_t new_time = burst_times[current_burst] - (current_time - burst_start_time);
         updateBurstTime(current_burst, new_time);
     }
-    /*
+    //remain_time = current_time - launch_time;
+    
     if (state == State::Running)
     {
-        remain_time = remain_time - (current_time/100);
+        cpu_time = cpu_time + 50;
+        remain_time = remain_time - 50;
+        //remain_time = current_time - launch_time;
+        /*
         if (remain_time < 0)
         {
             remain_time = 0;
         }
+        */
     }
-    */
+    if (state == State::Ready)
+    {
+        //remain_time = current_time - launch_time;
+        wait_time = current_time - launch_time;
+        
+    }
+    
+    
     
     
 }
