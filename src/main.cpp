@@ -220,6 +220,7 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
                 shared_data->ready_queue.push_back(process);
                 }//Unlock
                 process->setCpuCore(-1);
+                process->setState(Process::Ready,time);
                 process->interruptHandled();
 
     //     - I/O queue if CPU burst finished (and process not finished) -- no actual queue, simply set state to IO
