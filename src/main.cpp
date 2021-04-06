@@ -219,6 +219,7 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
                 {std::lock_guard<std::mutex> lock(shared_data->mutex);//Lock
                 shared_data->ready_queue.push_back(process);
                 }//Unlock
+                process->updateBurstTime(time);
                 process->setCpuCore(-1);
                 process->setState(Process::Ready,time);
                 process->interruptHandled();

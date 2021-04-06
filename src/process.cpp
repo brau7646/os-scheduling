@@ -18,6 +18,7 @@ Process::Process(ProcessDetails details, uint64_t current_time)
     if (state == State::Ready)
     {
         launch_time = current_time;
+        last_update_time = current_time;
     }
     is_interrupted = false;
     core = -1;
@@ -29,6 +30,7 @@ Process::Process(ProcessDetails details, uint64_t current_time)
     {
         remain_time += burst_times[i];
     }
+
 }
 
 Process::~Process()
@@ -101,6 +103,7 @@ void Process::setState(State new_state, uint64_t current_time)
     if (state == State::NotStarted && new_state == State::Ready)
     {
         launch_time = current_time;
+        last_update_time = current_time;
     }
     state = new_state;
 }
@@ -122,28 +125,39 @@ void Process::interruptHandled()
 
 void Process::updateProcess(uint64_t current_time)
 {
-    
+
     if (state != State::Terminated)
     {
         turn_time = current_time - launch_time;
     }
     else {
-        remain_time = 0;
+        //remain_time = 0;
     }
     
     // use `current_time` to update turnaround time, wait time, burst times, 
     // cpu time, and remaining time
-    if(is_interrupted)
-    {
-        uint64_t new_time = burst_times[current_burst] - (current_time - burst_start_time);
-        updateBurstTime(current_burst, new_time);
-    }
     //remain_time = current_time - launch_time;
     
     if (state == State::Running)
     {
-        cpu_time = cpu_time + 50;
-        remain_time = remain_time - 50;
+        cpu_time =  (current_time - burst_start_time);
+
+        for (int i = 0; i < current_burst; i+=2)
+        {
+            cpu_time += burst_times[i];
+        }
+        //remain_time = remain_time - 50;
+        //remain_time = burst_times[current_burst] - cpu_time;
+
+        uint32_t left = 0;
+        for (int i = 0; i < num_bursts; i+=2)
+        {
+            left += burst_times[i];
+        }
+        remain_time = left - cpu_time;
+
+        
+
         //remain_time = current_time - launch_time;
         /*
         if (remain_time < 0)
@@ -152,21 +166,26 @@ void Process::updateProcess(uint64_t current_time)
         }
         */
     }
+    
     if (state == State::Ready)
     {
         //remain_time = current_time - launch_time;
-        wait_time = current_time - launch_time;
-        
+        wait_time = turn_time - cpu_time;
+
+        uint32_t ioTime = 0;
+        for (int i = 1; i < current_burst; i+=2)
+        {
+            ioTime += burst_times[i];
+        }
+
+        wait_time -= ioTime;
     }
-    
-    
-    
-    
 }
 
-void Process::updateBurstTime(int burst_idx, uint32_t new_time)
+void Process::updateBurstTime(uint64_t current_time)
 {
-    burst_times[burst_idx] = new_time;
+    uint32_t new_time = burst_times[current_burst] - (current_time - burst_start_time);
+    burst_times[current_burst] = new_time;
 }
 
 double Process::getBurstTime()//Divide by 1000 maybe
