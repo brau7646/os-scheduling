@@ -27,6 +27,7 @@ void clearOutput(int num_lines);
 uint64_t currentTime();
 std::string processStateToString(Process::State state);
 bool needsInterupt(uint64_t time, Process* process, SchedulerData *shared_data);
+void printStats(std::vector<Process*>& processes);
 
 int main(int argc, char **argv)
 {
@@ -108,6 +109,7 @@ int main(int argc, char **argv)
                 shared_data->ready_queue.push_back(i);
             }
 
+
             //   - *Check if any processes have finished their I/O burst, and if so put that process back in the ready queue
             if (i->isBurstFinished(time) && i->getState() == i->State::IO)
             {
@@ -121,7 +123,6 @@ int main(int argc, char **argv)
             {
                 i->interrupt();
             }
-
             //   - Determine if all processes are in the terminated state
         }
         bool all_term = true;
@@ -162,19 +163,38 @@ int main(int argc, char **argv)
     }
 
     // print final statistics
+    printStats(processes);
+
+    // Clean up before quitting program
+    processes.clear();
+
+    return 0;
+}
+
+void printStats(std::vector<Process*>& processes)
+{
+    double tot_turn_time = 0;
+    double tot_wait_time = 0;
+    double tot_cpu_time = 0;
+    int num_processes = 0;
+    for (Process* i : processes)
+    {
+        num_processes += 1;
+        tot_turn_time += i->getTurnaroundTime();
+        tot_wait_time += i->getWaitTime();
+        tot_cpu_time += i->getCpuTime();
+    }
+
     //  - CPU utilization
+    std::cout << "CPU Utilization: " << (tot_cpu_time/tot_turn_time)*100 << "%" << std::endl;
     //  - Throughput
     //     - Average for first 50% of processes finished
     //     - Average for second 50% of processes finished
     //     - Overall average
     //  - Average turnaround time
+    std::cout << "Average turnaround time: " << (tot_turn_time/num_processes) << std::endl;
     //  - Average waiting time
-
-    // Clean up before quitting program
-    
-    processes.clear();
-
-    return 0;
+    std::cout << "Average waiting time: " << (tot_wait_time/num_processes) << std::endl;
 }
 
 void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)

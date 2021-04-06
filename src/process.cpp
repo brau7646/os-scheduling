@@ -125,61 +125,29 @@ void Process::interruptHandled()
 
 void Process::updateProcess(uint64_t current_time)
 {
-
+    // use `current_time` to update turnaround time, wait time, burst times, 
+    // cpu time, and remaining time
     if (state != State::Terminated)
     {
         turn_time = current_time - launch_time;
     }
     else {
-        //remain_time = 0;
+        remain_time = 0;
     }
-    
-    // use `current_time` to update turnaround time, wait time, burst times, 
-    // cpu time, and remaining time
-    //remain_time = current_time - launch_time;
     
     if (state == State::Running)
     {
-        cpu_time =  (current_time - burst_start_time);
+        cpu_time = cpu_time + (current_time - last_update_time);
 
-        for (int i = 0; i < current_burst; i+=2)
-        {
-            cpu_time += burst_times[i];
-        }
-        //remain_time = remain_time - 50;
-        //remain_time = burst_times[current_burst] - cpu_time;
-
-        uint32_t left = 0;
-        for (int i = 0; i < num_bursts; i+=2)
-        {
-            left += burst_times[i];
-        }
-        remain_time = left - cpu_time;
-
-        
-
-        //remain_time = current_time - launch_time;
-        /*
-        if (remain_time < 0)
-        {
-            remain_time = 0;
-        }
-        */
+        remain_time = remain_time - (current_time - last_update_time);
     }
     
     if (state == State::Ready)
     {
-        //remain_time = current_time - launch_time;
-        wait_time = turn_time - cpu_time;
-
-        uint32_t ioTime = 0;
-        for (int i = 1; i < current_burst; i+=2)
-        {
-            ioTime += burst_times[i];
-        }
-
-        wait_time -= ioTime;
+        wait_time = wait_time + (current_time - last_update_time);
     }
+
+    last_update_time = current_time;
 }
 
 void Process::updateBurstTime(uint64_t current_time)
