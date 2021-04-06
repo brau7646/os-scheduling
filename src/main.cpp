@@ -100,9 +100,8 @@ int main(int argc, char **argv)
         
         uint64_t time = currentTime();
 
-        bool all_term = true;
         for (Process* i : processes){
-
+            i->updateProcess(time-start);
             //   - *Check if any processes need to move from NotStarted to Ready (based on elapsed time), and if so put that process in the ready queue
             if (time >= i->getStartTime() && i->getState() == i->State::NotStarted){
                 i->setState(i->State::Ready, time);
@@ -123,6 +122,10 @@ int main(int argc, char **argv)
                 i->interrupt();
             }
 
+            //   - Determine if all processes are in the terminated state
+        }
+        bool all_term = true;
+        for (Process* i : processes){
             //   - Determine if all processes are in the terminated state
             if (i->getState() != Process::State::Terminated)
             {
@@ -184,40 +187,46 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
 
         uint64_t time = currentTime();
 
-        {std::lock_guard<std::mutex> lock(shared_data->mutex);//Lock
     //   - *Get process at front of ready queue
-        process = shared_data->ready_queue.front();
-        shared_data->ready_queue.pop_front();
-        }//Unlock
-        process->setState(Process::Running, time);
-        process->setBurstStartTime(time);
+        
+        if (shared_data->ready_queue.size() > 0)
+        {
+            {std::lock_guard<std::mutex> lock(shared_data->mutex);//Lock
+            process = shared_data->ready_queue.front();
+            shared_data->ready_queue.pop_front();
+            }//Unlock
+            process->setState(Process::Running, time);
+            process->setBurstStartTime(time);
 
     //   - Simulate the processes running until one of the following:
     //     - CPU burst time has elapsed
     //     - Interrupted (RR time slice has elapsed or process preempted by higher priority process)
-        while(!process->isBurstFinished(time) && !process->isInterrupted())
-        {
-            time = currentTime();
-        }
+            while(!process->isBurstFinished(time) && !process->isInterrupted())
+            {
+                time = currentTime();
+            
+            }
 
     //  - Place the process back in the appropriate queue
     //     - Terminated if CPU burst finished and no more bursts remain -- no actual queue, simply set state to Terminated
-        if(process->isFinalCycle() && process->isBurstFinished(time)) {
-            process->setState(Process::Terminated, time);
+            if(process->isFinalCycle() && process->isBurstFinished(time)) {
+                process->setState(Process::Terminated, time);
 
     //     - *Ready queue if interrupted (be sure to modify the CPU burst time to now reflect the remaining time)
-        } else if(process->isInterrupted()) {
-            {std::lock_guard<std::mutex> lock(shared_data->mutex);//Lock
-            shared_data->ready_queue.push_back(process);
-            }//Unlock
-            process->updateProcess(time);
-            process->interruptHandled();
+            } else if(process->isInterrupted()) {
+                {std::lock_guard<std::mutex> lock(shared_data->mutex);//Lock
+                shared_data->ready_queue.push_back(process);
+                }//Unlock
+        
+                process->interruptHandled();
 
     //     - I/O queue if CPU burst finished (and process not finished) -- no actual queue, simply set state to IO
-        } else {
-            process->setState(Process::IO, time);
-            process->incrementCurrentBurst();
+            } else {
+                process->setState(Process::IO, time);
+                process->incrementCurrentBurst();
+            }
         }
+        
 
 
     //  - Wait context switching time
@@ -258,7 +267,7 @@ int printProcessOutput(std::vector<Process*>& processes, std::mutex& mutex)
 {
     int i;
     int num_lines = 2;
-    std::lock_guard<std::mutex> lock(mutex);
+    //std::lock_guard<std::mutex> lock(mutex);
     printf("|   PID | Priority |      State | Core | Turn Time | Wait Time | CPU Time | Remain Time |\n");
     printf("+-------+----------+------------+------+-----------+-----------+----------+-------------+\n");
     for (i = 0; i < processes.size(); i++)

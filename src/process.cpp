@@ -129,6 +129,18 @@ void Process::updateProcess(uint64_t current_time)
         uint64_t new_time = burst_times[current_burst] - (current_time - burst_start_time);
         updateBurstTime(current_burst, new_time);
     }
+    /*
+    if (state == State::Running)
+    {
+        remain_time = remain_time - (current_time/100);
+        if (remain_time < 0)
+        {
+            remain_time = 0;
+        }
+    }
+    */
+    
+    
 }
 
 void Process::updateBurstTime(int burst_idx, uint32_t new_time)
