@@ -19,6 +19,7 @@ typedef struct SchedulerData {
     uint32_t time_slice;
     std::list<Process*> ready_queue;
     bool all_terminated;
+    uint64_t* util_times;
 } SchedulerData;
 
 void coreRunProcesses(uint8_t core_id, SchedulerData *data);
@@ -27,7 +28,7 @@ void clearOutput(int num_lines);
 uint64_t currentTime();
 std::string processStateToString(Process::State state);
 bool needsInterupt(uint64_t time, Process* process, SchedulerData *shared_data);
-void printStats(std::vector<Process*>& processes);
+void printStats(std::vector<Process*>& processes, uint64_t*& utilization_times, int num_cores);
 
 int main(int argc, char **argv)
 {
@@ -53,6 +54,9 @@ int main(int argc, char **argv)
     shared_data->context_switch = config->context_switch;
     shared_data->time_slice = config->time_slice;
     shared_data->all_terminated = false;
+
+    //Initialize Utilization time array
+    shared_data->util_times = new uint64_t[num_cores];
 
     // Create processes
     uint64_t start = currentTime();
@@ -163,7 +167,7 @@ int main(int argc, char **argv)
     }
 
     // print final statistics
-    printStats(processes);
+    printStats(processes, shared_data->util_times, num_cores);
 
     // Clean up before quitting program
     processes.clear();
@@ -171,35 +175,68 @@ int main(int argc, char **argv)
     return 0;
 }
 
-void printStats(std::vector<Process*>& processes)
+void printStats(std::vector<Process*>& processes, uint64_t*& utilization_times, int num_cores)
 {
     double tot_turn_time = 0;
     double tot_wait_time = 0;
     double tot_cpu_time = 0;
+    double tot_sim_time = 0;
     int num_processes = 0;
+
+    //Find ^^^ those values
     for (Process* i : processes)
     {
         num_processes += 1;
+        if(i->getTurnaroundTime() > tot_sim_time){
+            tot_sim_time = i->getTurnaroundTime();
+        }
         tot_turn_time += i->getTurnaroundTime();
         tot_wait_time += i->getWaitTime();
         tot_cpu_time += i->getCpuTime();
     }
 
+    //Find Throughput
+    double half_sim_time = tot_sim_time/2;
+    int firstHalf = 0;
+    int secondHalf = 0;
+    for (Process* i : processes)
+    {
+        if(i->getTurnaroundTime() < half_sim_time){
+            firstHalf++;
+        } else {
+            secondHalf++;
+        }
+    }
+
+    std::cout << std::endl;
     //  - CPU utilization
-    std::cout << "CPU Utilization: " << (tot_cpu_time/tot_turn_time)*100 << "%" << std::endl;
+    std::cout << "CPU Utilization: " << std::endl;
+    for(int i = 0; i < num_cores; i++){
+        std::cout << "    Core " << i << " ran for " << (utilization_times[i]/tot_sim_time)*100 << "% of the total time: " << tot_sim_time << " seconds" << std::endl;
+    }
+    std::cout << std::endl;
+
     //  - Throughput
+    std::cout << "Throughput: " << std::endl;
     //     - Average for first 50% of processes finished
+    std::cout << "    First 50% : " << (firstHalf/half_sim_time) << " processes per second" << std::endl;
     //     - Average for second 50% of processes finished
+    std::cout << "    Second 50%: " << (secondHalf/half_sim_time) << " processes per second" << std::endl;
     //     - Overall average
+    std::cout << "    Overall   : " << ((firstHalf + secondHalf)/tot_sim_time) << " processes per second" << std::endl;
+
+    std::cout << std::endl;
     //  - Average turnaround time
     std::cout << "Average turnaround time: " << (tot_turn_time/num_processes) << std::endl;
     //  - Average waiting time
-    std::cout << "Average waiting time: " << (tot_wait_time/num_processes) << std::endl;
+    std::cout << "Average waiting time   : " << (tot_wait_time/num_processes) << std::endl;
+    std::cout << std::endl;
 }
 
 void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
 {
     Process *process;
+    uint64_t utilizationTime = 0;
     // Work to be done by each core idependent of the other cores
 
     // Repeat until all processes in terminated state:
@@ -222,11 +259,13 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
     //   - Simulate the processes running until one of the following:
     //     - CPU burst time has elapsed
     //     - Interrupted (RR time slice has elapsed or process preempted by higher priority process)
+            uint64_t startTime = time;
             while(!process->isBurstFinished(time) && !process->isInterrupted())
             {
                 time = currentTime();
-            
             }
+
+            utilizationTime += (time - startTime)/1000.0;
 
     //  - Place the process back in the appropriate queue
     //     - Terminated if CPU burst finished and no more bursts remain -- no actual queue, simply set state to Terminated
@@ -260,6 +299,11 @@ void coreRunProcesses(uint8_t core_id, SchedulerData *shared_data)
 
     //  - * = accesses shared data (ready queue), so be sure to use proper synchronization
     }
+
+    //Report time spent with running processes
+    {std::lock_guard<std::mutex> lock(shared_data->mutex);//Lock
+        shared_data->util_times[core_id] = utilizationTime;
+    }//Unlock
 }
 
 
